@@ -19,12 +19,12 @@ set(EXTRA_RESOURCES "resources/hellovr_actions.json"
 # Add source to this project's executable.
 add_executable (OpenVR_Test
 	            "OpenVR_Test.cpp" "OpenVR_Test.h"
+				"Util.cpp" "Util.h"
 				"shared/compat.h"
 				"shared/lodepng.cpp" "shared/lodepng.h"
 				"shared/Matrices.cpp" "shared/Matrices.h"
-				"shared/pathtools.cpp" "shared/pathtools.h"
-				"shared/strtools.cpp" "shared/strtools.h"
 				"shared/Vectors.h")
+target_compile_features(OpenVR_Test PRIVATE cxx_std_17)
 target_link_libraries(OpenVR_Test PRIVATE SDL2::SDL2 SDL2::SDL2main GLEW::GLEW OpenVR::OpenVR)
 
 if (NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)

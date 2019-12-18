@@ -18,10 +18,12 @@
 #include <cstdlib>
 #include <string>
 
+#include "Util.h"
 #include "shared/Matrices.h"
 #include "shared/compat.h"
 #include "shared/lodepng.h"
-#include "shared/pathtools.h"
+
+namespace fs = std::filesystem;
 
 #if defined(POSIX)
 #include "unistd.h"
@@ -519,8 +521,7 @@ bool CMainApplication::BInit() {
   }
 
   vr::VRInput()->SetActionManifestPath(
-      Path_MakeAbsolute("resources/hellovr_actions.json",
-                        Path_StripFilename(Path_GetExecutablePath()))
+      util::ToCharString(util::AssetPath() / fs::path("hellovr_actions.json"))
           .c_str());
 
   vr::VRInput()->GetActionHandle("/actions/demo/in/HideCubes",
@@ -827,7 +828,7 @@ void CMainApplication::RenderFrame() {
 
   if (m_bVblank && m_bGlFinishHack) {
     //$ HACKHACK. From gpuview profiling, it looks like there is a bug where two
-    //renders and a present
+    // renders and a present
     // happen right before and after the vsync causing all kinds of jittering
     // issues. This glFinish() appears to clear that up. Temporary fix while I
     // try to get nvidia to investigate this problem. 1/29/2014 mikesart
@@ -1056,15 +1057,12 @@ bool CMainApplication::CreateAllShaders() {
 // Purpose:
 //-----------------------------------------------------------------------------
 bool CMainApplication::SetupTexturemaps() {
-  std::string sExecutableDirectory =
-      Path_StripFilename(Path_GetExecutablePath());
-  std::string strFullPath =
-      Path_MakeAbsolute("resources/cube_texture.png", sExecutableDirectory);
+  const auto texture_path = util::AssetPath() / "cube_texture.png";
 
   std::vector<unsigned char> imageRGBA;
   unsigned nImageWidth, nImageHeight;
   unsigned nError = lodepng::decode(imageRGBA, nImageWidth, nImageHeight,
-                                    strFullPath.c_str());
+                                    util::ToCharString(texture_path));
 
   if (nError != 0) return false;
 
@@ -1846,6 +1844,7 @@ void CGLRenderModel::Draw() {
 // Purpose:
 //-----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
+  util::Init();
   CMainApplication* pMainApplication = new CMainApplication(argc, argv);
 
   if (!pMainApplication->BInit()) {
