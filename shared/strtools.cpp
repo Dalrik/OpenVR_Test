@@ -192,7 +192,7 @@ uint32_t ReturnStdString(const std::string& sValue, char* pchBuffer, uint32_t un
 
 void BufferToStdString(std::string& sDest, const char* pchBuffer, uint32_t unBufferLen)
 {
-	sDest.resize(unBufferLen + 1);
+	sDest.resize(static_cast<size_t>(unBufferLen) + 1);
 	memcpy(const_cast<char*>(sDest.c_str()), pchBuffer, unBufferLen);
 	const_cast<char*>(sDest.c_str())[unBufferLen] = '\0';
 }
