@@ -3,6 +3,12 @@
 #include <GL/glew.h>
 #include <SDL.h>
 #include <SDL_opengl.h>
+
+#include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #if defined(OSX)
 #include <AppKit/AppKit.h>
 #include <Foundation/Foundation.h>
@@ -19,7 +25,6 @@
 #include <string>
 
 #include "Util.h"
-#include "shared/Matrices.h"
 #include "shared/compat.h"
 #include "shared/lodepng.h"
 
@@ -89,7 +94,7 @@ class CMainApplication {
   bool SetupTexturemaps();
 
   void SetupScene();
-  void AddCubeToScene(Matrix4 mat, std::vector<float>& vertdata);
+  void AddCubeToScene(glm::mat4 mat, std::vector<float>& vertdata);
   void AddCubeVertex(float fl0, float fl1, float fl2, float fl3, float fl4,
                      std::vector<float>& vertdata);
 
@@ -103,12 +108,12 @@ class CMainApplication {
   void RenderCompanionWindow();
   void RenderScene(vr::Hmd_Eye nEye);
 
-  Matrix4 GetHMDMatrixProjectionEye(vr::Hmd_Eye nEye);
-  Matrix4 GetHMDMatrixPoseEye(vr::Hmd_Eye nEye);
-  Matrix4 GetCurrentViewProjectionMatrix(vr::Hmd_Eye nEye);
+  glm::mat4 GetHMDMatrixProjectionEye(vr::Hmd_Eye nEye);
+  glm::mat4 GetHMDMatrixPoseEye(vr::Hmd_Eye nEye);
+  glm::mat4 GetCurrentViewProjectionMatrix(vr::Hmd_Eye nEye);
   void UpdateHMDMatrixPose();
 
-  Matrix4 ConvertSteamVRMatrixToMatrix4(const vr::HmdMatrix34_t& matPose);
+  glm::mat4 ConvertSteamVRMatrixToMat4(const vr::HmdMatrix34_t& matPose);
 
   GLuint CompileGLShader(const char* pchShaderName, const char* pchVertexShader,
                          const char* pchFragmentShader);
@@ -127,13 +132,13 @@ class CMainApplication {
   std::string m_strDriver;
   std::string m_strDisplay;
   vr::TrackedDevicePose_t m_rTrackedDevicePose[vr::k_unMaxTrackedDeviceCount];
-  Matrix4 m_rmat4DevicePose[vr::k_unMaxTrackedDeviceCount];
+  glm::mat4 m_rmat4DevicePose[vr::k_unMaxTrackedDeviceCount];
 
   struct ControllerInfo_t {
     vr::VRInputValueHandle_t m_source = vr::k_ulInvalidInputValueHandle;
     vr::VRActionHandle_t m_actionPose = vr::k_ulInvalidActionHandle;
     vr::VRActionHandle_t m_actionHaptic = vr::k_ulInvalidActionHandle;
-    Matrix4 m_rmat4Pose;
+    glm::mat4 m_rmat4Pose;
     CGLRenderModel* m_pRenderModel = nullptr;
     std::string m_sRenderModelName;
     bool m_bShowController;
@@ -158,7 +163,7 @@ class CMainApplication {
   int m_iValidPoseCount;
   int m_iValidPoseCount_Last;
   bool m_bShowCubes;
-  Vector2 m_vAnalogValue;
+  glm::vec2 m_vAnalogValue;
 
   std::string m_strPoseClasses;  // what classes we saw poses for this frame
   char
@@ -193,24 +198,24 @@ class CMainApplication {
   GLuint m_unControllerVAO;
   unsigned int m_uiControllerVertcount;
 
-  Matrix4 m_mat4HMDPose;
-  Matrix4 m_mat4eyePosLeft;
-  Matrix4 m_mat4eyePosRight;
+  glm::mat4 m_mat4HMDPose;
+  glm::mat4 m_mat4eyePosLeft;
+  glm::mat4 m_mat4eyePosRight;
 
-  Matrix4 m_mat4ProjectionCenter;
-  Matrix4 m_mat4ProjectionLeft;
-  Matrix4 m_mat4ProjectionRight;
+  glm::mat4 m_mat4ProjectionCenter;
+  glm::mat4 m_mat4ProjectionLeft;
+  glm::mat4 m_mat4ProjectionRight;
 
   struct VertexDataScene {
-    Vector3 position;
-    Vector2 texCoord;
+    glm::vec3 position;
+    glm::vec2 texCoord;
   };
 
   struct VertexDataWindow {
-    Vector2 position;
-    Vector2 texCoord;
+    glm::vec2 position;
+    glm::vec2 texCoord;
 
-    VertexDataWindow(const Vector2& pos, const Vector2 tex)
+    VertexDataWindow(const glm::vec2& pos, const glm::vec2& tex)
         : position(pos), texCoord(tex) {}
   };
 
@@ -752,8 +757,8 @@ bool CMainApplication::HandleInput() {
         !poseData.bActive || !poseData.pose.bPoseIsValid) {
       m_rHand[eHand].m_bShowController = false;
     } else {
-      m_rHand[eHand].m_rmat4Pose = ConvertSteamVRMatrixToMatrix4(
-          poseData.pose.mDeviceToAbsoluteTracking);
+      m_rHand[eHand].m_rmat4Pose =
+          ConvertSteamVRMatrixToMat4(poseData.pose.mDeviceToAbsoluteTracking);
 
       vr::InputOriginInfo_t originInfo;
       if (vr::VRInput()->GetOriginTrackedDeviceInfo(
@@ -1097,28 +1102,25 @@ void CMainApplication::SetupScene() {
 
   std::vector<float> vertdataarray;
 
-  Matrix4 matScale;
-  matScale.scale(m_fScale, m_fScale, m_fScale);
-  Matrix4 matTransform;
-  matTransform.translate(-((float)m_iSceneVolumeWidth * m_fScaleSpacing) / 2.f,
-                         -((float)m_iSceneVolumeHeight * m_fScaleSpacing) / 2.f,
-                         -((float)m_iSceneVolumeDepth * m_fScaleSpacing) / 2.f);
-
-  Matrix4 mat = matScale * matTransform;
+  glm::mat4 mat = glm::translate(
+      glm::scale(glm::identity<glm::mat4>(), glm::vec3(m_fScale)),
+      {-((float)m_iSceneVolumeWidth * m_fScaleSpacing) / 2.f,
+       -((float)m_iSceneVolumeHeight * m_fScaleSpacing) / 2.f,
+       -((float)m_iSceneVolumeDepth * m_fScaleSpacing) / 2.f});
 
   for (int z = 0; z < m_iSceneVolumeDepth; z++) {
     for (int y = 0; y < m_iSceneVolumeHeight; y++) {
       for (int x = 0; x < m_iSceneVolumeWidth; x++) {
         AddCubeToScene(mat, vertdataarray);
-        mat = mat * Matrix4().translate(m_fScaleSpacing, 0, 0);
+        mat = glm::translate(mat, {m_fScaleSpacing, 0, 0});
       }
-      mat = mat *
-            Matrix4().translate(-((float)m_iSceneVolumeWidth) * m_fScaleSpacing,
-                                m_fScaleSpacing, 0);
+      mat =
+          glm::translate(mat, {-((float)m_iSceneVolumeWidth) * m_fScaleSpacing,
+                               m_fScaleSpacing, 0});
     }
-    mat = mat * Matrix4().translate(
-                    0, -((float)m_iSceneVolumeHeight) * m_fScaleSpacing,
-                    m_fScaleSpacing);
+    mat = glm::translate(
+        mat,
+        {0, -((float)m_iSceneVolumeHeight) * m_fScaleSpacing, m_fScaleSpacing});
   }
   m_uiVertcount = vertdataarray.size() / 5;
 
@@ -1136,7 +1138,7 @@ void CMainApplication::SetupScene() {
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (const void*)offset);
 
-  offset += sizeof(Vector3);
+  offset += sizeof(glm::vec3);
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (const void*)offset);
 
@@ -1160,18 +1162,18 @@ void CMainApplication::AddCubeVertex(float fl0, float fl1, float fl2, float fl3,
 //-----------------------------------------------------------------------------
 // Purpose:
 //-----------------------------------------------------------------------------
-void CMainApplication::AddCubeToScene(Matrix4 mat,
+void CMainApplication::AddCubeToScene(glm::mat4 mat,
                                       std::vector<float>& vertdata) {
   // Matrix4 mat( outermat.data() );
 
-  Vector4 A = mat * Vector4(0, 0, 0, 1);
-  Vector4 B = mat * Vector4(1, 0, 0, 1);
-  Vector4 C = mat * Vector4(1, 1, 0, 1);
-  Vector4 D = mat * Vector4(0, 1, 0, 1);
-  Vector4 E = mat * Vector4(0, 0, 1, 1);
-  Vector4 F = mat * Vector4(1, 0, 1, 1);
-  Vector4 G = mat * Vector4(1, 1, 1, 1);
-  Vector4 H = mat * Vector4(0, 1, 1, 1);
+  glm::vec4 A = mat * glm::vec4(0, 0, 0, 1);
+  glm::vec4 B = mat * glm::vec4(1, 0, 0, 1);
+  glm::vec4 C = mat * glm::vec4(1, 1, 0, 1);
+  glm::vec4 D = mat * glm::vec4(0, 1, 0, 1);
+  glm::vec4 E = mat * glm::vec4(0, 0, 1, 1);
+  glm::vec4 F = mat * glm::vec4(1, 0, 1, 1);
+  glm::vec4 G = mat * glm::vec4(1, 1, 1, 1);
+  glm::vec4 H = mat * glm::vec4(0, 1, 1, 1);
 
   // triangles instead of quads
   AddCubeVertex(E.x, E.y, E.z, 0, 1, vertdata);  // Front
@@ -1232,13 +1234,13 @@ void CMainApplication::RenderControllerAxes() {
   for (EHand eHand = Left; eHand <= Right; ((int&)eHand)++) {
     if (!m_rHand[eHand].m_bShowController) continue;
 
-    const Matrix4& mat = m_rHand[eHand].m_rmat4Pose;
+    const glm::mat4& mat = m_rHand[eHand].m_rmat4Pose;
 
-    Vector4 center = mat * Vector4(0, 0, 0, 1);
+    glm::vec4 center = mat * glm::vec4(0, 0, 0, 1);
 
     for (int i = 0; i < 3; ++i) {
-      Vector3 color(0, 0, 0);
-      Vector4 point(0, 0, 0, 1);
+      glm::vec3 color(0, 0, 0);
+      glm::vec4 point(0, 0, 0, 1);
       point[i] += 0.05f;  // offset in X, Y, Z
       color[i] = 1.0;     // R, G, B
       point = mat * point;
@@ -1246,38 +1248,38 @@ void CMainApplication::RenderControllerAxes() {
       vertdataarray.push_back(center.y);
       vertdataarray.push_back(center.z);
 
-      vertdataarray.push_back(color.x);
-      vertdataarray.push_back(color.y);
-      vertdataarray.push_back(color.z);
+      vertdataarray.push_back(color.r);
+      vertdataarray.push_back(color.g);
+      vertdataarray.push_back(color.b);
 
       vertdataarray.push_back(point.x);
       vertdataarray.push_back(point.y);
       vertdataarray.push_back(point.z);
 
-      vertdataarray.push_back(color.x);
-      vertdataarray.push_back(color.y);
-      vertdataarray.push_back(color.z);
+      vertdataarray.push_back(color.r);
+      vertdataarray.push_back(color.g);
+      vertdataarray.push_back(color.b);
 
       m_uiControllerVertcount += 2;
     }
 
-    Vector4 start = mat * Vector4(0, 0, -0.02f, 1);
-    Vector4 end = mat * Vector4(0, 0, -39.f, 1);
-    Vector3 color(.92f, .92f, .71f);
+    glm::vec4 start = mat * glm::vec4(0, 0, -0.02f, 1);
+    glm::vec4 end = mat * glm::vec4(0, 0, -39.f, 1);
+    glm::vec3 color(.92f, .92f, .71f);
 
     vertdataarray.push_back(start.x);
     vertdataarray.push_back(start.y);
     vertdataarray.push_back(start.z);
-    vertdataarray.push_back(color.x);
-    vertdataarray.push_back(color.y);
-    vertdataarray.push_back(color.z);
+    vertdataarray.push_back(color.r);
+    vertdataarray.push_back(color.g);
+    vertdataarray.push_back(color.b);
 
     vertdataarray.push_back(end.x);
     vertdataarray.push_back(end.y);
     vertdataarray.push_back(end.z);
-    vertdataarray.push_back(color.x);
-    vertdataarray.push_back(color.y);
-    vertdataarray.push_back(color.z);
+    vertdataarray.push_back(color.r);
+    vertdataarray.push_back(color.g);
+    vertdataarray.push_back(color.b);
     m_uiControllerVertcount += 2;
   }
 
@@ -1296,7 +1298,7 @@ void CMainApplication::RenderControllerAxes() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride,
                           (const void*)offset);
 
-    offset += sizeof(Vector3);
+    offset += sizeof(glm::vec3);
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride,
                           (const void*)offset);
@@ -1394,16 +1396,16 @@ void CMainApplication::SetupCompanionWindow() {
   std::vector<VertexDataWindow> vVerts;
 
   // left eye verts
-  vVerts.push_back(VertexDataWindow(Vector2(-1, -1), Vector2(0, 1)));
-  vVerts.push_back(VertexDataWindow(Vector2(0, -1), Vector2(1, 1)));
-  vVerts.push_back(VertexDataWindow(Vector2(-1, 1), Vector2(0, 0)));
-  vVerts.push_back(VertexDataWindow(Vector2(0, 1), Vector2(1, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(-1, -1), glm::vec2(0, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(0, -1), glm::vec2(1, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(-1, 1), glm::vec2(0, 1)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(0, 1), glm::vec2(1, 1)));
 
   // right eye verts
-  vVerts.push_back(VertexDataWindow(Vector2(0, -1), Vector2(0, 1)));
-  vVerts.push_back(VertexDataWindow(Vector2(1, -1), Vector2(1, 1)));
-  vVerts.push_back(VertexDataWindow(Vector2(0, 1), Vector2(0, 0)));
-  vVerts.push_back(VertexDataWindow(Vector2(1, 1), Vector2(1, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(0, -1), glm::vec2(0, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(1, -1), glm::vec2(1, 0)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(0, 1), glm::vec2(0, 1)));
+  vVerts.push_back(VertexDataWindow(glm::vec2(1, 1), glm::vec2(1, 1)));
 
   GLushort vIndices[] = {0, 1, 3, 0, 3, 2, 4, 5, 7, 4, 7, 6};
   m_uiCompanionWindowIndexSize = _countof(vIndices);
@@ -1493,7 +1495,7 @@ void CMainApplication::RenderScene(vr::Hmd_Eye nEye) {
   if (m_bShowCubes) {
     glUseProgram(m_unSceneProgramID);
     glUniformMatrix4fv(m_nSceneMatrixLocation, 1, GL_FALSE,
-                       GetCurrentViewProjectionMatrix(nEye).get());
+                       glm::value_ptr(GetCurrentViewProjectionMatrix(nEye)));
     glBindVertexArray(m_unSceneVAO);
     glBindTexture(GL_TEXTURE_2D, m_iTexture);
     glDrawArrays(GL_TRIANGLES, 0, m_uiVertcount);
@@ -1506,7 +1508,7 @@ void CMainApplication::RenderScene(vr::Hmd_Eye nEye) {
     // draw the controller axis lines
     glUseProgram(m_unControllerTransformProgramID);
     glUniformMatrix4fv(m_nControllerMatrixLocation, 1, GL_FALSE,
-                       GetCurrentViewProjectionMatrix(nEye).get());
+                       glm::value_ptr(GetCurrentViewProjectionMatrix(nEye)));
     glBindVertexArray(m_unControllerVAO);
     glDrawArrays(GL_LINES, 0, m_uiControllerVertcount);
     glBindVertexArray(0);
@@ -1519,9 +1521,11 @@ void CMainApplication::RenderScene(vr::Hmd_Eye nEye) {
     if (!m_rHand[eHand].m_bShowController || !m_rHand[eHand].m_pRenderModel)
       continue;
 
-    const Matrix4& matDeviceToTracking = m_rHand[eHand].m_rmat4Pose;
-    Matrix4 matMVP = GetCurrentViewProjectionMatrix(nEye) * matDeviceToTracking;
-    glUniformMatrix4fv(m_nRenderModelMatrixLocation, 1, GL_FALSE, matMVP.get());
+    const glm::mat4& matDeviceToTracking = m_rHand[eHand].m_rmat4Pose;
+    glm::mat4 matMVP =
+        GetCurrentViewProjectionMatrix(nEye) * matDeviceToTracking;
+    glUniformMatrix4fv(m_nRenderModelMatrixLocation, 1, GL_FALSE,
+                       glm::value_ptr(matMVP));
 
     m_rHand[eHand].m_pRenderModel->Draw();
   }
@@ -1565,40 +1569,38 @@ void CMainApplication::RenderCompanionWindow() {
 //-----------------------------------------------------------------------------
 // Purpose: Gets a Matrix Projection Eye with respect to nEye.
 //-----------------------------------------------------------------------------
-Matrix4 CMainApplication::GetHMDMatrixProjectionEye(vr::Hmd_Eye nEye) {
-  if (!m_pHMD) return Matrix4();
+glm::mat4 CMainApplication::GetHMDMatrixProjectionEye(vr::Hmd_Eye nEye) {
+  if (!m_pHMD) return glm::identity<glm::mat4>();
 
   vr::HmdMatrix44_t mat =
       m_pHMD->GetProjectionMatrix(nEye, m_fNearClip, m_fFarClip);
 
-  return Matrix4(mat.m[0][0], mat.m[1][0], mat.m[2][0], mat.m[3][0],
-                 mat.m[0][1], mat.m[1][1], mat.m[2][1], mat.m[3][1],
-                 mat.m[0][2], mat.m[1][2], mat.m[2][2], mat.m[3][2],
-                 mat.m[0][3], mat.m[1][3], mat.m[2][3], mat.m[3][3]);
+  return glm::mat4(mat.m[0][0], mat.m[1][0], mat.m[2][0], mat.m[3][0],
+                   mat.m[0][1], mat.m[1][1], mat.m[2][1], mat.m[3][1],
+                   mat.m[0][2], mat.m[1][2], mat.m[2][2], mat.m[3][2],
+                   mat.m[0][3], mat.m[1][3], mat.m[2][3], mat.m[3][3]);
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Gets an HMDMatrixPoseEye with respect to nEye.
 //-----------------------------------------------------------------------------
-Matrix4 CMainApplication::GetHMDMatrixPoseEye(vr::Hmd_Eye nEye) {
-  if (!m_pHMD) return Matrix4();
+glm::mat4 CMainApplication::GetHMDMatrixPoseEye(vr::Hmd_Eye nEye) {
+  if (!m_pHMD) return glm::identity<glm::mat4>();
 
   vr::HmdMatrix34_t matEyeRight = m_pHMD->GetEyeToHeadTransform(nEye);
-  Matrix4 matrixObj(
+  return glm::inverse(glm::mat4(
       matEyeRight.m[0][0], matEyeRight.m[1][0], matEyeRight.m[2][0], 0.0,
       matEyeRight.m[0][1], matEyeRight.m[1][1], matEyeRight.m[2][1], 0.0,
       matEyeRight.m[0][2], matEyeRight.m[1][2], matEyeRight.m[2][2], 0.0,
-      matEyeRight.m[0][3], matEyeRight.m[1][3], matEyeRight.m[2][3], 1.0f);
-
-  return matrixObj.invert();
+      matEyeRight.m[0][3], matEyeRight.m[1][3], matEyeRight.m[2][3], 1.0f));
 }
 
 //-----------------------------------------------------------------------------
 // Purpose: Gets a Current View Projection Matrix with respect to nEye,
 //          which may be an Eye_Left or an Eye_Right.
 //-----------------------------------------------------------------------------
-Matrix4 CMainApplication::GetCurrentViewProjectionMatrix(vr::Hmd_Eye nEye) {
-  Matrix4 matMVP;
+glm::mat4 CMainApplication::GetCurrentViewProjectionMatrix(vr::Hmd_Eye nEye) {
+  glm::mat4 matMVP;
   if (nEye == vr::Eye_Left) {
     matMVP = m_mat4ProjectionLeft * m_mat4eyePosLeft * m_mat4HMDPose;
   } else if (nEye == vr::Eye_Right) {
@@ -1622,7 +1624,7 @@ void CMainApplication::UpdateHMDMatrixPose() {
   for (int nDevice = 0; nDevice < vr::k_unMaxTrackedDeviceCount; ++nDevice) {
     if (m_rTrackedDevicePose[nDevice].bPoseIsValid) {
       m_iValidPoseCount++;
-      m_rmat4DevicePose[nDevice] = ConvertSteamVRMatrixToMatrix4(
+      m_rmat4DevicePose[nDevice] = ConvertSteamVRMatrixToMat4(
           m_rTrackedDevicePose[nDevice].mDeviceToAbsoluteTracking);
       if (m_rDevClassChar[nDevice] == 0) {
         switch (m_pHMD->GetTrackedDeviceClass(nDevice)) {
@@ -1651,8 +1653,8 @@ void CMainApplication::UpdateHMDMatrixPose() {
   }
 
   if (m_rTrackedDevicePose[vr::k_unTrackedDeviceIndex_Hmd].bPoseIsValid) {
-    m_mat4HMDPose = m_rmat4DevicePose[vr::k_unTrackedDeviceIndex_Hmd];
-    m_mat4HMDPose.invert();
+    m_mat4HMDPose =
+        glm::inverse(m_rmat4DevicePose[vr::k_unTrackedDeviceIndex_Hmd]);
   }
 }
 
@@ -1722,12 +1724,12 @@ CGLRenderModel* CMainApplication::FindOrLoadRenderModel(
 //-----------------------------------------------------------------------------
 // Purpose: Converts a SteamVR matrix to our local matrix class
 //-----------------------------------------------------------------------------
-Matrix4 CMainApplication::ConvertSteamVRMatrixToMatrix4(
+glm::mat4 CMainApplication::ConvertSteamVRMatrixToMat4(
     const vr::HmdMatrix34_t& matPose) {
-  Matrix4 matrixObj(matPose.m[0][0], matPose.m[1][0], matPose.m[2][0], 0.0,
-                    matPose.m[0][1], matPose.m[1][1], matPose.m[2][1], 0.0,
-                    matPose.m[0][2], matPose.m[1][2], matPose.m[2][2], 0.0,
-                    matPose.m[0][3], matPose.m[1][3], matPose.m[2][3], 1.0f);
+  glm::mat4 matrixObj(matPose.m[0][0], matPose.m[1][0], matPose.m[2][0], 0.0,
+                      matPose.m[0][1], matPose.m[1][1], matPose.m[2][1], 0.0,
+                      matPose.m[0][2], matPose.m[1][2], matPose.m[2][2], 0.0,
+                      matPose.m[0][3], matPose.m[1][3], matPose.m[2][3], 1.0f);
   return matrixObj;
 }
 
