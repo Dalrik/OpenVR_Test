@@ -8,6 +8,7 @@ project ("OpenVR_Test")
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 find_package(SDL2 CONFIG REQUIRED)
+find_package(sdl2-image CONFIG REQUIRED)
 find_package(GLEW CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(OpenVR REQUIRED)
@@ -21,10 +22,9 @@ set(EXTRA_RESOURCES "resources/hellovr_actions.json"
 add_executable (OpenVR_Test
 	            "OpenVR_Test.cpp" "OpenVR_Test.h"
 				"Util.cpp" "Util.h"
-				"shared/compat.h"
-				"shared/lodepng.cpp" "shared/lodepng.h")
+				"shared/compat.h")
 target_compile_features(OpenVR_Test PRIVATE cxx_std_17)
-target_link_libraries(OpenVR_Test PRIVATE SDL2::SDL2 SDL2::SDL2main GLEW::GLEW glm OpenVR::OpenVR)
+target_link_libraries(OpenVR_Test PRIVATE SDL2::SDL2 SDL2::SDL2main SDL2::SDL2_image GLEW::GLEW glm OpenVR::OpenVR)
 
 if (NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
 	set(OUT_RESOURCE_FILES "")

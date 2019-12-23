@@ -2,13 +2,14 @@
 
 #include <GL/glew.h>
 #include <SDL.h>
+#include <SDL_image.h>
 #include <SDL_opengl.h>
 
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #if defined(OSX)
 #include <AppKit/AppKit.h>
 #include <Foundation/Foundation.h>
@@ -26,7 +27,6 @@
 
 #include "Util.h"
 #include "shared/compat.h"
-#include "shared/lodepng.h"
 
 namespace fs = std::filesystem;
 
@@ -427,6 +427,11 @@ bool CMainApplication::BInit() {
            SDL_GetError());
     return false;
   }
+  if (IMG_Init(IMG_INIT_PNG) != IMG_INIT_PNG) {
+    printf("%s - SDL_image could not initialize! IMG Error: %s\n", __FUNCTION__,
+           IMG_GetError());
+    return false;
+  }
 
   // Loading the SteamVR Runtime
   vr::EVRInitError eError = vr::VRInitError_None;
@@ -672,6 +677,7 @@ void CMainApplication::Shutdown() {
     m_pCompanionWindow = NULL;
   }
 
+  IMG_Quit();
   SDL_Quit();
 }
 
@@ -1064,19 +1070,28 @@ bool CMainApplication::CreateAllShaders() {
 bool CMainApplication::SetupTexturemaps() {
   const auto texture_path = util::AssetPath() / "cube_texture.png";
 
-  std::vector<unsigned char> imageRGBA;
-  unsigned nImageWidth, nImageHeight;
-  unsigned nError = lodepng::decode(imageRGBA, nImageWidth, nImageHeight,
-                                    util::ToCharString(texture_path));
+  const auto image = util::WrapSurface(IMG_Load(util::ToCharString(texture_path).c_str()));
+  if (!image) {
+    return false;
+  }
 
-  if (nError != 0) return false;
+  const auto imageRGBA =
+      util::WrapSurface(SDL_ConvertSurfaceFormat(image.get(), SDL_PIXELFORMAT_RGBA32, 0));
+
+  if (!imageRGBA) {
+    return false;
+  }
 
   glGenTextures(1, &m_iTexture);
   glBindTexture(GL_TEXTURE_2D, m_iTexture);
 
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, nImageWidth, nImageHeight, 0, GL_RGBA,
-               GL_UNSIGNED_BYTE, &imageRGBA[0]);
+  SDL_LockSurface(imageRGBA.get());
 
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imageRGBA->w, imageRGBA->h, 0,
+               GL_RGBA, GL_UNSIGNED_BYTE, imageRGBA->pixels);
+
+  SDL_UnlockSurface(imageRGBA.get());
+  
   glGenerateMipmap(GL_TEXTURE_2D);
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
