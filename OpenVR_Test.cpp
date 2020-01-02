@@ -7,6 +7,7 @@
 
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtx/transform.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -186,8 +187,10 @@ class CMainApplication {
   GLuint m_iTexture;
 
   unsigned int m_uiVertcount;
+  unsigned int m_uiCubecount;
 
-  GLuint m_glSceneVertBuffer;
+  GLuint m_glCubeVertBuffer;
+  GLuint m_glCubePosBuffer;
   GLuint m_unSceneVAO;
   GLuint m_unCompanionWindowVAO;
   GLuint m_glCompanionWindowIDVertBuffer;
@@ -509,7 +512,7 @@ bool CMainApplication::BInit() {
   m_iSceneVolumeDepth = m_iSceneVolumeInit;
 
   m_fScale = 0.3f;
-  m_fScaleSpacing = 4.0f;
+  m_fScaleSpacing = 4.0f * m_fScale;
 
   m_fNearClip = 0.1f;
   m_fFarClip = 30.0f;
@@ -634,7 +637,8 @@ void CMainApplication::Shutdown() {
                             nullptr, GL_FALSE);
       glDebugMessageCallback(nullptr, nullptr);
     }
-    glDeleteBuffers(1, &m_glSceneVertBuffer);
+    glDeleteBuffers(1, &m_glCubeVertBuffer);
+    glDeleteBuffers(1, &m_glCubePosBuffer);
 
     if (m_unSceneProgramID) {
       glDeleteProgram(m_unSceneProgramID);
@@ -893,8 +897,15 @@ GLuint CMainApplication::CompileGLShader(const char* pchShaderName,
   GLint vShaderCompiled = GL_FALSE;
   glGetShaderiv(nSceneVertexShader, GL_COMPILE_STATUS, &vShaderCompiled);
   if (vShaderCompiled != GL_TRUE) {
-    dprintf("%s - Unable to compile vertex shader %d!\n", pchShaderName,
-            nSceneVertexShader);
+    GLint logSize = 0;
+    glGetShaderiv(nSceneVertexShader, GL_INFO_LOG_LENGTH, &logSize);
+    std::string shaderLog;
+    shaderLog.resize(logSize);
+    glGetShaderInfoLog(nSceneVertexShader, shaderLog.size(), NULL,
+                       shaderLog.data());
+
+    dprintf("%s - Unable to compile vertex shader %d!: %s\n", pchShaderName,
+            nSceneVertexShader, shaderLog.c_str());
     glDeleteProgram(unProgramID);
     glDeleteShader(nSceneVertexShader);
     return 0;
@@ -947,14 +958,14 @@ bool CMainApplication::CreateAllShaders() {
                       // Vertex Shader
                       "#version 410\n"
                       "uniform mat4 matrix;\n"
-                      "layout(location = 0) in vec4 position;\n"
+                      "layout(location = 0) in vec3 position;\n"
                       "layout(location = 1) in vec2 v2UVcoordsIn;\n"
-                      "layout(location = 2) in vec3 v3NormalIn;\n"
+                      "layout(location = 2) in vec3 offset;\n"
                       "out vec2 v2UVcoords;\n"
                       "void main()\n"
                       "{\n"
                       "	v2UVcoords = v2UVcoordsIn;\n"
-                      "	gl_Position = matrix * position;\n"
+                      "	gl_Position = matrix * vec4(position + offset, 1.0);\n"
                       "}\n",
 
                       // Fragment Shader
@@ -1070,13 +1081,14 @@ bool CMainApplication::CreateAllShaders() {
 bool CMainApplication::SetupTexturemaps() {
   const auto texture_path = util::AssetPath() / "cube_texture.png";
 
-  const auto image = util::WrapSurface(IMG_Load(util::ToCharString(texture_path).c_str()));
+  const auto image =
+      util::WrapSurface(IMG_Load(util::ToCharString(texture_path).c_str()));
   if (!image) {
     return false;
   }
 
-  const auto imageRGBA =
-      util::WrapSurface(SDL_ConvertSurfaceFormat(image.get(), SDL_PIXELFORMAT_RGBA32, 0));
+  const auto imageRGBA = util::WrapSurface(
+      SDL_ConvertSurfaceFormat(image.get(), SDL_PIXELFORMAT_RGBA32, 0));
 
   if (!imageRGBA) {
     return false;
@@ -1091,7 +1103,7 @@ bool CMainApplication::SetupTexturemaps() {
                GL_RGBA, GL_UNSIGNED_BYTE, imageRGBA->pixels);
 
   SDL_UnlockSurface(imageRGBA.get());
-  
+
   glGenerateMipmap(GL_TEXTURE_2D);
 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1115,37 +1127,40 @@ bool CMainApplication::SetupTexturemaps() {
 void CMainApplication::SetupScene() {
   if (!m_pHMD) return;
 
-  std::vector<float> vertdataarray;
+  std::vector<float> vertDataArray;
+  std::vector<glm::vec3> posArray;
+  posArray.reserve(m_iSceneVolumeDepth * m_iSceneVolumeHeight *
+                   m_iSceneVolumeWidth);
 
-  glm::mat4 mat = glm::translate(
-      glm::scale(glm::identity<glm::mat4>(), glm::vec3(m_fScale)),
-      {-((float)m_iSceneVolumeWidth * m_fScaleSpacing) / 2.f,
-       -((float)m_iSceneVolumeHeight * m_fScaleSpacing) / 2.f,
-       -((float)m_iSceneVolumeDepth * m_fScaleSpacing) / 2.f});
+  const glm::mat4 mat = glm::scale(glm::vec3(m_fScale));
+  AddCubeToScene(mat, vertDataArray);
+
+  glm::vec3 pos{-((float)m_iSceneVolumeWidth * m_fScaleSpacing) / 2.f,
+                -((float)m_iSceneVolumeHeight * m_fScaleSpacing) / 2.f,
+                -((float)m_iSceneVolumeDepth * m_fScaleSpacing) / 2.f};
 
   for (int z = 0; z < m_iSceneVolumeDepth; z++) {
     for (int y = 0; y < m_iSceneVolumeHeight; y++) {
       for (int x = 0; x < m_iSceneVolumeWidth; x++) {
-        AddCubeToScene(mat, vertdataarray);
-        mat = glm::translate(mat, {m_fScaleSpacing, 0, 0});
+        posArray.push_back(pos);
+        pos += glm::vec3{m_fScaleSpacing, 0, 0};
       }
-      mat =
-          glm::translate(mat, {-((float)m_iSceneVolumeWidth) * m_fScaleSpacing,
-                               m_fScaleSpacing, 0});
+      pos += glm::vec3{-((float)m_iSceneVolumeWidth) * m_fScaleSpacing,
+                       m_fScaleSpacing, 0};
     }
-    mat = glm::translate(
-        mat,
-        {0, -((float)m_iSceneVolumeHeight) * m_fScaleSpacing, m_fScaleSpacing});
+    pos += glm::vec3{0, -((float)m_iSceneVolumeWidth) * m_fScaleSpacing,
+                     m_fScaleSpacing};
   }
-  m_uiVertcount = vertdataarray.size() / 5;
+  m_uiVertcount = (unsigned int)vertDataArray.size() / 5;
+  m_uiCubecount = (unsigned int)posArray.size();
 
   glGenVertexArrays(1, &m_unSceneVAO);
   glBindVertexArray(m_unSceneVAO);
 
-  glGenBuffers(1, &m_glSceneVertBuffer);
-  glBindBuffer(GL_ARRAY_BUFFER, m_glSceneVertBuffer);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertdataarray.size(),
-               &vertdataarray[0], GL_STATIC_DRAW);
+  glGenBuffers(1, &m_glCubeVertBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, m_glCubeVertBuffer);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(float) * vertDataArray.size(),
+               &vertDataArray[0], GL_STATIC_DRAW);
 
   GLsizei stride = sizeof(VertexDataScene);
   uintptr_t offset = 0;
@@ -1157,9 +1172,19 @@ void CMainApplication::SetupScene() {
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, (const void*)offset);
 
+  glGenBuffers(1, &m_glCubePosBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, m_glCubePosBuffer);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * posArray.size(),
+               posArray.data(), GL_STATIC_DRAW);
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+  glVertexAttribDivisor(2, 1);
+
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindVertexArray(0);
   glDisableVertexAttribArray(0);
   glDisableVertexAttribArray(1);
+  glDisableVertexAttribArray(2);
 }
 
 //-----------------------------------------------------------------------------
@@ -1513,7 +1538,7 @@ void CMainApplication::RenderScene(vr::Hmd_Eye nEye) {
                        glm::value_ptr(GetCurrentViewProjectionMatrix(nEye)));
     glBindVertexArray(m_unSceneVAO);
     glBindTexture(GL_TEXTURE_2D, m_iTexture);
-    glDrawArrays(GL_TRIANGLES, 0, m_uiVertcount);
+    glDrawArraysInstanced(GL_TRIANGLES, 0, m_uiVertcount, m_uiCubecount);
     glBindVertexArray(0);
   }
 
